@@ -521,13 +521,27 @@ window.addEventListener('scroll',()=>{topBtn.style.display=window.scrollY>400?'f
 topBtn.addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
+const TOURNAMENT_START = new Date('2026-06-11T19:00:00Z').getTime();
+
+function checkTournamentState() {
+  const now = Date.now();
+  const btn = document.querySelector('.refresh-btn');
+  const statusEl = document.getElementById('lastUpdate');
+  if (now < TOURNAMENT_START) {
+    if (btn) { btn.disabled=true; btn.title='El torneo empieza el 11 de junio'; btn.style.opacity='0.4'; btn.style.cursor='not-allowed'; }
+    if (statusEl) statusEl.textContent = '⏳ Empieza el 11 de junio';
+    setStatus('ok', 'Fixture cargado ✓');
+  } else {
+    if (btn) { btn.disabled=false; btn.style.opacity='1'; btn.style.cursor='pointer'; btn.title=''; }
+    setInterval(refreshResults, 5*60*1000);
+    refreshResults();
+  }
+}
+
 renderCalendar();
 renderStandings();
 updateCounters();
-// Auto-refresh results every 5 min
-setInterval(refreshResults, 5*60*1000);
-// Initial fetch (silently, to get any results already available)
-refreshResults();
+checkTournamentState();
 </script>
 </body>
 </html>

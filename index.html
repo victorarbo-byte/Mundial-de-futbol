@@ -255,9 +255,8 @@ let activeFilter='all';
 
 // ─── API: worldcup26.ir (free, no auth, CORS open) ───────────────────────────
 // Fallback: openfootball GitHub JSON
-const API_PRIMARY   = 'https://worldcup26.ir/get/games';
-const API_GROUPS    = 'https://worldcup26.ir/get/groups';
-const API_FALLBACK  = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
+const API_OPENFOOTBALL = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
+const API_SCORES      = 'https://worldcup26.ir/get/games';
 
 function setStatus(cls,txt){
   const el=document.getElementById('apiStatus');
@@ -265,73 +264,81 @@ function setStatus(cls,txt){
   document.getElementById('apiStatusTxt').textContent=txt;
 }
 
-// Normalize worldcup26.ir game format to our internal format
-function normalizeGame(g){
-  // worldcup26.ir format: {id, home_team, away_team, home_score, away_score, date, time, group, stage, venue}
-  const t1=g.home_team||g.team1||'';
-  const t2=g.away_team||g.team2||'';
-  const round=g.stage||g.round||g.group||'Matchday 1';
-  const hasScore=(g.home_score!==null&&g.home_score!==undefined&&g.away_score!==null&&g.away_score!==undefined);
-  const isLive=g.status==='live'||g.status==='in_progress'||g.status==='LIVE';
-  return{
-    team1:t1, team2:t2,
-    score1:hasScore?g.home_score:undefined,
-    score2:hasScore?g.away_score:undefined,
-    isLive,
-    date:g.date||'', time:g.time||'00:00 UTC-5',
-    group:g.group||null,
-    round,
-    ground:g.venue||g.stadium||g.ground||'',
-  };
-}
-
-// Normalize openfootball format (score stored as score.ft[0], score.ft[1])
-function normalizeFallback(m){
+// Normalize openfootball match (base schedule + scores via score.ft)
+function normalizeOF(m){
   const ft=m.score&&m.score.ft;
   const hasScore=ft&&ft.length===2;
   return{
-    team1:m.team1||m.team1_name||'',
-    team2:m.team2||m.team2_name||'',
+    team1:m.team1||'', team2:m.team2||'',
     score1:hasScore?ft[0]:undefined,
     score2:hasScore?ft[1]:undefined,
     isLive:false,
-    date:m.date,time:m.time||'00:00 UTC-5',
-    group:m.group||null,
-    round:m.round||'',
+    date:m.date, time:m.time||'00:00 UTC-5',
+    group:m.group||null, round:m.round||'',
     ground:m.ground||'',
   };
 }
 
+// Normalize team name for matching between sources
+function normTeam(name){
+  return (name||'').toLowerCase()
+    .replace(/&/g,'and').replace(/[^a-z]/g,'');
+}
+
 async function fetchData(){
   setStatus('loading','Actualizando…');
-  let ok=false;
-  // Try primary API (worldcup26.ir)
+  let baseMatches=[];
+
+  // Step 1: Load base schedule from openfootball (always works, has UTC offsets)
   try{
-    const r=await fetch(API_PRIMARY,{cache:'no-store'});
-    if(!r.ok)throw new Error('status '+r.status);
-    const data=await r.json();
-    const games=Array.isArray(data)?data:(data.games||data.matches||[]);
-    if(!games.length)throw new Error('empty');
-    ALL_MATCHES=games.map(normalizeGame);
-    setStatus('ok','En vivo ✓');
-    ok=true;
-  }catch(e){/* fall through */}
-  // Fallback: openfootball GitHub JSON (has real scores, updated by community)
-  if(!ok){
-    try{
-      const r2=await fetch(API_FALLBACK+'?_='+Date.now(),{cache:'no-store'});
-      if(!r2.ok)throw new Error('fallback '+r2.status);
-      const d2=await r2.json();
-      const matches=d2.matches||[];
-      if(!matches.length)throw new Error('empty fallback');
-      ALL_MATCHES=matches.map(normalizeFallback);
-      setStatus('ok','Resultados ✓');
-      ok=true;
-    }catch(e2){
-      if(!ALL_MATCHES.length)setStatus('err','Sin conexión');
-      else setStatus('ok','Últimos datos ✓');
-    }
+    const r=await fetch(API_OPENFOOTBALL+'?_='+Date.now(),{cache:'no-store'});
+    if(!r.ok)throw new Error('OF '+r.status);
+    const d=await r.json();
+    baseMatches=(d.matches||[]).map(normalizeOF);
+  }catch(e){
+    setStatus('err','Error cargando calendario');
+    return;
   }
+
+  ALL_MATCHES=baseMatches;
+
+  // Step 2: Try to overlay live scores from worldcup26.ir
+  try{
+    const r2=await fetch(API_SCORES,{cache:'no-store'});
+    if(!r2.ok)throw new Error('scores '+r2.status);
+    const d2=await r2.json();
+    const liveGames=Array.isArray(d2)?d2:(d2.games||[]);
+
+    // Build lookup: normTeam(t1)+'|'+normTeam(t2) -> {score1,score2,isLive}
+    const lookup={};
+    for(const g of liveGames){
+      const t1=g.home_team_name_en||g.home_team||'';
+      const t2=g.away_team_name_en||g.away_team||'';
+      const s1=parseFloat(g.home_score), s2=parseFloat(g.away_score);
+      const finished=String(g.finished).toUpperCase()==='TRUE';
+      const isLive=g.time_elapsed&&g.time_elapsed!=='notstarted'&&!finished;
+      const hasScore=(finished||isLive)&&!isNaN(s1)&&!isNaN(s2);
+      if(hasScore){
+        const k=normTeam(t1)+'|'+normTeam(t2);
+        lookup[k]={score1:s1,score2:s2,isLive:!!isLive};
+      }
+    }
+
+    // Overlay scores onto base matches
+    let overlaid=0;
+    ALL_MATCHES=baseMatches.map(m=>{
+      const k=normTeam(m.team1)+'|'+normTeam(m.team2);
+      const live=lookup[k];
+      if(live){overlaid++;return{...m,...live};}
+      return m;
+    });
+    const liveCount=ALL_MATCHES.filter(m=>m.isLive).length;
+    setStatus('ok', liveCount>0?liveCount+' en juego 🔴':'Resultados ✓');
+  }catch(e){
+    // worldcup26.ir unavailable - openfootball already has final scores
+    setStatus('ok','Resultados ✓');
+  }
+
   renderCalendar();
   renderStandings();
   updateCounters();

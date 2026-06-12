@@ -285,13 +285,15 @@ function normalizeGame(g){
   };
 }
 
-// Normalize openfootball format
+// Normalize openfootball format (score stored as score.ft[0], score.ft[1])
 function normalizeFallback(m){
-  const hasScore=(m.score1!==undefined&&m.score2!==undefined);
+  const ft=m.score&&m.score.ft;
+  const hasScore=ft&&ft.length===2;
   return{
-    team1:m.team1,team2:m.team2,
-    score1:hasScore?m.score1:undefined,
-    score2:hasScore?m.score2:undefined,
+    team1:m.team1||m.team1_name||'',
+    team2:m.team2||m.team2_name||'',
+    score1:hasScore?ft[0]:undefined,
+    score2:hasScore?ft[1]:undefined,
     isLive:false,
     date:m.date,time:m.time||'00:00 UTC-5',
     group:m.group||null,
@@ -302,26 +304,32 @@ function normalizeFallback(m){
 
 async function fetchData(){
   setStatus('loading','Actualizando…');
+  let ok=false;
+  // Try primary API (worldcup26.ir)
   try{
     const r=await fetch(API_PRIMARY,{cache:'no-store'});
     if(!r.ok)throw new Error('status '+r.status);
     const data=await r.json();
-    // worldcup26.ir returns array directly or {games:[...]}
     const games=Array.isArray(data)?data:(data.games||data.matches||[]);
     if(!games.length)throw new Error('empty');
     ALL_MATCHES=games.map(normalizeGame);
     setStatus('ok','En vivo ✓');
-  }catch(e){
-    // Try fallback
+    ok=true;
+  }catch(e){/* fall through */}
+  // Fallback: openfootball GitHub JSON (has real scores, updated by community)
+  if(!ok){
     try{
-      const r2=await fetch(API_FALLBACK+'?_='+Date.now());
+      const r2=await fetch(API_FALLBACK+'?_='+Date.now(),{cache:'no-store'});
       if(!r2.ok)throw new Error('fallback '+r2.status);
       const d2=await r2.json();
-      ALL_MATCHES=(d2.matches||[]).map(normalizeFallback);
-      setStatus('ok','Datos cargados ✓');
+      const matches=d2.matches||[];
+      if(!matches.length)throw new Error('empty fallback');
+      ALL_MATCHES=matches.map(normalizeFallback);
+      setStatus('ok','Resultados ✓');
+      ok=true;
     }catch(e2){
-      setStatus('err','Sin conexión — datos locales');
-      // Keep whatever we had
+      if(!ALL_MATCHES.length)setStatus('err','Sin conexión');
+      else setStatus('ok','Últimos datos ✓');
     }
   }
   renderCalendar();

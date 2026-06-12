@@ -93,7 +93,8 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-
 .classify-legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-family:'Barlow Condensed',sans-serif;font-size:0.74rem;letter-spacing:1px;color:var(--muted);align-items:center;}
 .leg-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:3px;}
 .leg-green{background:var(--green);}
-.leg-blue{background:var(--blue);}
+.leg-amber{background:#f59e0b;}
+.leg-elim{background:#374151;}
 .last-update{margin-left:auto;font-size:0.7rem;color:var(--muted);font-family:'Barlow Condensed',sans-serif;}
 .grupos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;}
 .grupo-card{background:var(--panel);border:1px solid var(--border);border-radius:5px;overflow:hidden;}
@@ -113,8 +114,12 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-
 .team-cell .name{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.88rem;}
 .pts-cell{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.98rem;color:var(--gold2);}
 .row-q1 td:first-child{color:var(--green)!important;font-weight:700;}
-.row-q2 td:first-child{color:var(--blue)!important;font-weight:700;}
-.row-q3 td:first-child{color:#f59e0b!important;}
+.row-q2 td:first-child{color:var(--green)!important;font-weight:700;}
+.row-q3 td:first-child{color:#f59e0b!important;font-weight:600;}
+.row-elim td:first-child{color:#4b5563!important;}
+.row-q1,.row-q2{border-left:2px solid var(--green);}
+.row-q3{border-left:2px solid #f59e0b;}
+.row-elim{border-left:2px solid #1f2937;}
 #topBtn{position:fixed;bottom:22px;right:18px;background:var(--gold);color:#000;border:none;border-radius:3px;width:36px;height:36px;font-size:1rem;cursor:pointer;display:none;align-items:center;justify-content:center;font-weight:900;z-index:300;}
 #topBtn:hover{background:var(--gold2);}
 @media(max-width:600px){
@@ -161,7 +166,8 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-
 <section class="section" id="tab-clasificacion">
   <div class="classify-legend">
     <span><span class="leg-dot leg-green"></span>Clasifica directo (1.º y 2.º)</span>
-    <span><span class="leg-dot leg-blue"></span>Posible clasificado (3.º)</span>
+    <span><span class="leg-dot leg-amber"></span>Posible clasificado (mejor 3.º — 8 de 12)</span>
+    <span><span class="leg-dot" style="background:#374151"></span>Eliminado (4.º)</span>
     <span id="lastUpdate" class="last-update"></span>
   </div>
   <div id="gruposGrid" class="grupos-grid">
@@ -436,7 +442,10 @@ function renderStandings(){
 <thead><tr><th>#</th><th>Equipo</th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>GF</th><th>GC</th><th>Pts</th></tr></thead>
 <tbody>`;
     teams.forEach((t,i)=>{
-      const rc=i===0?'row-q1':i===1?'row-q2':i===2?'row-q3':'';
+      // i=0 (1st) and i=1 (2nd) qualify directly
+      // i=2 (3rd) may qualify as one of the 8 best thirds — highlighted differently
+      // i=3 (4th) is eliminated
+      const rc=i===0?'row-q1':i===1?'row-q2':i===2?'row-q3':'row-elim';
       html+=`<tr class="${rc}">
 <td>${i+1}</td>
 <td><div class="team-cell"><span class="flag">${flag(t.name)}</span><span class="name">${es(t.name)}</span></div></td>
